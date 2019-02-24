@@ -30,7 +30,10 @@ impl Model for KvModel {
     type Input = KvInput;
     type Output = KvOutput;
 
-    fn partition(&self, history: Vec<Operation<Self::Input, Self::Output>>) -> Vec<Vec<Operation<Self::Input, Self::Output>>> {
+    fn partition(
+        &self,
+        history: Vec<Operation<Self::Input, Self::Output>>,
+    ) -> Vec<Vec<Operation<Self::Input, Self::Output>>> {
         let mut map = HashMap::new();
         for op in history {
             let v = map.entry(op.input.key.clone()).or_insert(vec![]);
@@ -42,18 +45,23 @@ impl Model for KvModel {
         }
         ret
     }
-    
+
     fn init(&self) -> Self::State {
         // note: we are modeling a single key's value here;
         // we're partitioning by key, so this is okay
         "".to_string()
     }
-    
-    fn step(&self, state: &Self::State, input: &Self::Input, output: &Self::Output) -> (bool, Self::State) {
+
+    fn step(
+        &self,
+        state: &Self::State,
+        input: &Self::Input,
+        output: &Self::Output,
+    ) -> (bool, Self::State) {
         match input.op {
             Op::GET => (&output.value == state, state.clone()),
             Op::PUT => (true, input.value.clone()),
-            Op::APPEND => (true, state.clone() + &input.value)
-        } 
+            Op::APPEND => (true, state.clone() + &input.value),
+        }
     }
 }

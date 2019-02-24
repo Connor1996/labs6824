@@ -10,19 +10,19 @@ impl Bitset {
         Bitset(vec![(bits / 64 + extra) as u64])
     }
 
-    pub fn set(&mut self, pos: usize)  {
+    pub fn set(&mut self, pos: usize) {
         let (major, minor) = bitset_index(pos);
         self.0[major] |= 1 << minor;
     }
 
-    pub fn clear(&mut self, pos: usize)  {
+    pub fn clear(&mut self, pos: usize) {
         let (major, minor) = bitset_index(pos);
         self.0[major] &= !(1 << minor);
     }
 
     pub fn get(&self, pos: usize) -> bool {
         let (major, minor) = bitset_index(pos);
-        self.0[major]&(1<<minor) != 0
+        self.0[major] & (1 << minor) != 0
     }
 
     fn popcnt(&self) -> usize {
@@ -50,7 +50,7 @@ impl Bitset {
         let b = &self.0;
         let b2 = &b2.0;
         if b.len() != b2.len() {
-            return false
+            return false;
         }
         for i in b {
             if b[*i as usize] != b2[*i as usize] {
