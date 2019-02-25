@@ -1,4 +1,11 @@
 #![feature(deadline_api)]
+
+#[cfg(test)]
+extern crate regex;
+#[cfg(test)]
+#[macro_use]
+extern crate lazy_static;
+
 mod bitset;
 mod model;
 mod models;
@@ -68,7 +75,7 @@ impl<T> LinkedNodes<T> {
             nodes.push_front(match entry.kind {
                 EntryKind::CallEntry => Rc::new(RefCell::new(Node {
                     value: entry.value,
-                    matched: Some(matches[&entry.id].clone()),
+                    matched: matches.get(&entry.id).map(|v| v.clone()),
                     id: entry.id,
                     next: None,
                     prev: None,
@@ -289,7 +296,7 @@ fn check_single<M: Model>(
 }
 
 pub fn check_operations<M: Model>(model: M, history: Vec<Operation<M::Input, M::Output>>) -> bool {
-    check_operations_timeout(model, history, Duration::new(0, 0))
+    check_operations_timeout(model, history, 0)
 }
 
 // timeout = 0 means no timeout
@@ -297,7 +304,7 @@ pub fn check_operations<M: Model>(model: M, history: Vec<Operation<M::Input, M::
 pub fn check_operations_timeout<M: Model>(
     model: M,
     history: Vec<Operation<M::Input, M::Output>>,
-    timeout: Duration,
+    timeout: u64,
 ) -> bool {
     let partitions = model.partition(history);
 
@@ -323,7 +330,11 @@ pub fn check_operations_timeout<M: Model>(
 
     let mut ok = true;
     loop {
-        match rx.recv_deadline(Instant::now() + timeout) {
+        match if timeout == 0 {
+            rx.recv().map_err(From::from)
+        } else {
+            rx.recv_deadline(Instant::now() + Duration::from_secs(timeout))
+        } {
             Ok(res) => {
                 ok = ok && res;
                 if !ok {
@@ -343,7 +354,7 @@ pub fn check_operations_timeout<M: Model>(
 }
 
 pub fn check_events<M: Model>(model: M, history: Vec<Event<Value<M::Input, M::Output>>>) -> bool {
-    check_events_timeout(model, history, Duration::new(0, 0))
+    check_events_timeout(model, history, 0)
 }
 
 // timeout = 0 means no timeout
@@ -351,7 +362,7 @@ pub fn check_events<M: Model>(model: M, history: Vec<Event<Value<M::Input, M::Ou
 pub fn check_events_timeout<M: Model>(
     model: M,
     history: Vec<Event<Value<M::Input, M::Output>>>,
-    timeout: Duration,
+    timeout: u64,
 ) -> bool {
     let partitions = model.partition_event(history);
 
@@ -377,7 +388,11 @@ pub fn check_events_timeout<M: Model>(
 
     let mut ok = true;
     loop {
-        match rx.recv_deadline(Instant::now() + timeout) {
+        match if timeout == 0 {
+            rx.recv().map_err(From::from)
+        } else {
+            rx.recv_deadline(Instant::now() + Duration::from_secs(timeout))
+        } {
             Ok(res) => {
                 ok = ok && res;
                 if !ok {
