@@ -3,7 +3,7 @@ mod bitset;
 mod model;
 mod models;
 
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -186,33 +186,33 @@ struct CallsEntry<V, T> {
 }
 
 fn lift<T>(entry: &LinkNode<T>) {
-    let prev = entry.borrow_mut().prev.clone().unwrap();
+    let prev = Ref::map(entry.borrow(), |e| e.prev.as_ref().unwrap());
     prev.borrow_mut().next = entry.borrow().next.clone();
-    let next = entry.borrow_mut().next.clone().unwrap();
+    let next = Ref::map(entry.borrow(), |e| e.next.as_ref().unwrap());
     next.borrow_mut().prev = entry.borrow().prev.clone();
 
-    let matched = entry.borrow_mut().matched.clone().unwrap();
-    let matched_prev = matched.borrow_mut().prev.clone().unwrap();
+    let matched = Ref::map(entry.borrow(), |e| e.matched.as_ref().unwrap());
+    let matched_prev = Ref::map(matched.borrow(), |e| e.prev.as_ref().unwrap());
     matched_prev.borrow_mut().next = matched.borrow().next.clone();
 
     if matched.borrow().next.is_some() {
-        let matched_next = matched.borrow_mut().next.clone().unwrap();
+        let matched_next = Ref::map(matched.borrow(), |e| e.next.as_ref().unwrap());
         matched_next.borrow_mut().prev = matched.borrow().prev.clone();
     }
 }
 
 fn unlift<T>(entry: &LinkNode<T>) {
-    let matched = entry.borrow_mut().matched.clone().unwrap();
-    let matched_prev = matched.borrow_mut().prev.clone().unwrap();
+    let matched = Ref::map(entry.borrow(), |e| e.matched.as_ref().unwrap());
+    let matched_prev = Ref::map(matched.borrow(), |e| e.prev.as_ref().unwrap());
     matched_prev.borrow_mut().next = Some(matched.clone());
     if matched.borrow().next.is_some() {
-        let matched_next = matched.borrow_mut().next.clone().unwrap();
-        matched_next.borrow_mut().prev = Some(matched);
+        let matched_next = Ref::map(matched.borrow(), |e| e.next.as_ref().unwrap());
+        matched_next.borrow_mut().prev = Some(matched.clone());
     }
 
-    let prev = entry.borrow_mut().prev.clone().unwrap();
+    let prev = Ref::map(entry.borrow(), |e| e.prev.as_ref().unwrap());
     prev.borrow_mut().next = Some(entry.clone());
-    let next = entry.borrow_mut().next.clone().unwrap();
+    let next = Ref::map(entry.borrow(), |e| e.next.as_ref().unwrap());
     next.borrow_mut().prev = Some(entry.clone());
 }
 
@@ -394,12 +394,4 @@ pub fn check_events_timeout<M: Model>(
         }
     }
     ok
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
 }
