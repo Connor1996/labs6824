@@ -17,24 +17,24 @@ use kvraft::config::Config;
 const RAFT_ELECTION_TIMEOUT: Duration = Duration::from_millis(1000);
 
 // get/put/putappend that keep counts
-fn get(cfg: &Config, ck: &Clerk, key: String) -> String {
-    let v = ck.get(key);
+fn get(cfg: &Config, ck: &Clerk, key: &str) -> String {
+    let v = ck.get(key.to_owned());
     cfg.op();
     v
 }
 
-fn put(cfg: &Config, ck: &Clerk, key: String, value: String) {
-    ck.put(key, value);
+fn put(cfg: &Config, ck: &Clerk, key: &str, value: &str) {
+    ck.put(key.to_owned(), value.to_owned());
     cfg.op();
 }
 
-fn append(cfg: &Config, ck: &Clerk, key: String, value: String) {
-    ck.append(key, value);
+fn append(cfg: &Config, ck: &Clerk, key: &str, value: &str) {
+    ck.append(key.to_owned(), value.to_owned());
     cfg.op();
 }
 
-fn check(cfg: &Config, ck: &Clerk, key: String, value: String) {
-    let v = get(cfg, ck, key.clone());
+fn check(cfg: &Config, ck: &Clerk, key: &str, value: &str) {
+    let v = get(cfg, ck, key);
     if v != value {
         panic!("get({:?}): expected:\n{:?}\nreceived:\n{:?}", key, value, v);
     }
@@ -136,27 +136,25 @@ fn partitioner(
     fn delay(r: u64) -> Delay {
         Delay::new(RAFT_ELECTION_TIMEOUT + Duration::from_millis(r % 200))
     }
+
+    // Context of the poll_fn.
+    let mut all = cfg.all();
+    let mut sleep = None;
+    let mut is_parked = false;
     future::poll_fn(move || {
         let mut rng = rand::thread_rng();
-        let mut sleep = delay(rng.gen::<u64>());
         while done.load(Ordering::Relaxed) == 0 {
-            let mut a = vec![0; cfg.n];
-            for i in 0..cfg.n {
-                a[i] = rng.gen::<u32>() % 2;
+            if !is_parked {
+                rng.shuffle(&mut all);
+                let offset = rng.gen_range(0, cfg.n);
+                cfg.partition(&all[..offset], &all[offset..]);
+                sleep = Some(delay(rng.gen::<u64>()));
             }
-            let mut pa = [vec![], vec![]];
-            for i in 0..2usize {
-                for j in 0..cfg.n {
-                    if a[j] == i as u32 {
-                        pa[i].push(j);
-                    }
-                }
-            }
-            cfg.partition(&pa[0], &pa[1]);
-            futures::try_ready!(sleep.poll().map_err(|e| {
+            is_parked = true;
+            futures::try_ready!(sleep.as_mut().unwrap().poll().map_err(|e| {
                 panic!("sleep failed: {:?}", e);
             }));
-            sleep = delay(rng.gen::<u64>());
+            is_parked = false;
         }
         ch.send(true).unwrap();
         Ok(futures::Async::Ready(()))
@@ -237,17 +235,17 @@ fn generic_test(
                     let mut rng = rand::thread_rng();
                     let mut last = String::new();
                     let key = format!("{}", cli);
-                    put(&cfg1, myck, key.clone(), last.clone());
+                    put(&cfg1, myck, &key, &last);
                     while done_clients1.load(Ordering::Relaxed) == 0 {
                         if (rng.gen::<u32>() % 1000) < 500 {
                             let nv = format!("x {} {} y", cli, i);
                             debug!("{}: client new append {}", cli, nv);
                             last = next_value(last, &nv);
-                            append(&cfg1, myck, key.clone(), nv);
+                            append(&cfg1, myck, &key, &nv);
                             j += 1;
                         } else {
                             debug!("{}: client new get {:?}", cli, key);
-                            let v = get(&cfg1, myck, key.clone());
+                            let v = get(&cfg1, &myck, &key);
                             if v != last {
                                 panic!(
                                     "get wrong value, key {:?}, wanted:\n{:?}\n, got\n{:?}",
@@ -305,9 +303,9 @@ fn generic_test(
         }
 
         debug!("wait for clients");
-        for i in 0..nclients {
+        for (i, clnt_rx) in clnt_rxs.iter().enumerate() {
             debug!("read from clients {}", i);
-            let j = clnt_rxs[i].try_recv().unwrap();
+            let j = clnt_rx.try_recv().unwrap();
             if j < 10 {
                 debug!(
                     "Warning: client {} managed to perform only {} put operations in 1 sec?",
@@ -316,7 +314,7 @@ fn generic_test(
             }
             let key = format!("{}", i);
             debug!("Check {:?} for client {}", j, i);
-            let v = get(&cfg, &ck, key);
+            let v = get(&cfg, &ck, &key);
             check_clnt_appends(i, v, j);
         }
 
@@ -353,6 +351,159 @@ fn test_concurrent_3a() {
 fn test_unreliable_3a() {
     // Test: unreliable net, many clients (3A) ...
     generic_test("3A", 5, true, false, false, None)
+}
+
+#[test]
+fn test_unreliable_one_key_3a() {
+    let nservers = 3;
+    let cfg = {
+        let mut cfg = Config::new(nservers, true, None);
+        cfg.begin("Test: concurrent append to same key, unreliable (3A)");
+        Arc::new(cfg)
+    };
+
+    let all = cfg.all();
+    let ck = cfg.make_client(&all);
+
+    put(&cfg, &ck, "k", "");
+
+    let cfg_ = cfg.clone();
+    let nclient = 5;
+    let upto = 10;
+    spawn_clients_and_wait(cfg.clone(), nclient, move || {
+        let cfg1 = cfg_.clone();
+        move |me, myck| {
+            for n in 0..upto {
+                append(&cfg1, myck, "k", &format!("x {} {} y", me, n));
+            }
+        }
+    })
+    .wait()
+    .unwrap();
+
+    let counts = vec![upto; nclient];
+
+    let vx = get(&cfg, &ck, "k");
+    check_concurrent_appends(vx, &counts);
+
+    cfg.check_timeout();
+    cfg.end();
+}
+
+// Submit a request in the minority partition and check that the requests
+// doesn't go through until the partition heals. The leader in the original
+// network ends up in the minority partition.
+#[test]
+fn test_one_partition_3a() {
+    let nservers = 5;
+    let cfg = Config::new(nservers, false, None);
+
+    let all = cfg.all();
+    let ck = cfg.make_client(&all);
+
+    put(&cfg, &ck, "1", "13");
+
+    cfg.begin("Test: progress in majority (3A)");
+
+    let (p1, p2) = cfg.make_partition();
+    cfg.partition(&p1, &p2);
+
+    // connect ckp1 to p1
+    let ckp1 = cfg.make_client(&p1);
+    // connect ckp2a to p2
+    let ckp2a = cfg.make_client(&p2);
+    let ckp2a_name = ckp2a.name.clone();
+    // connect ckp2b to p2
+    let ckp2b = cfg.make_client(&p2);
+    let ckp2b_name = ckp2b.name.clone();
+
+    put(&cfg, &ckp1, "1", "14");
+    check(&cfg, &ckp1, "1", "14");
+
+    cfg.end();
+
+    let (done0_tx, done0_rx) = oneshot::channel::<&'static str>();
+    let (done1_tx, done1_rx) = oneshot::channel::<&'static str>();
+
+    cfg.begin("Test: no progress in minority (3A)");
+    cfg.net.spawn(future::lazy(move || {
+        ckp2a.put("1".to_owned(), "15".to_owned());
+        done0_tx.send("put").map_err(|e| {
+            warn!("done0 send failed: {:?}", e);
+        })
+    }));
+    let done0_rx = done0_rx.map(|op| {
+        cfg.op();
+        op
+    });
+
+    cfg.net.spawn(future::lazy(move || {
+        // different clerk in p2
+        ckp2b.get("1".to_owned());
+        done1_tx.send("get").map_err(|e| {
+            warn!("done0 send failed: {:?}", e);
+        })
+    }));
+    let done1_rx = done1_rx.map(|op| {
+        cfg.op();
+        op
+    });
+
+    let timeout = Delay::new(Duration::from_secs(1));
+
+    let dones = timeout
+        .select2(done0_rx.select(done1_rx))
+        .map(|res| match res {
+            future::Either::A((_, dones)) => dones,
+            future::Either::B(((op, _), _)) => panic!("{} in minority completed", op),
+        })
+        .map_err(|_| panic!("unexpect error"))
+        .wait()
+        .unwrap();
+
+    check(&cfg, &ckp1, "1", "14");
+    put(&cfg, &ckp1, "1", "16");
+    check(&cfg, &ckp1, "1", "16");
+
+    cfg.end();
+
+    cfg.begin("Test: completion after heal (3A)");
+
+    cfg.connect_all();
+    cfg.connect_client_by_name(&ckp2a_name, &all);
+    cfg.connect_client_by_name(&ckp2b_name, &all);
+
+    thread::sleep(RAFT_ELECTION_TIMEOUT);
+
+    let timeout = Delay::new(Duration::from_secs(3));
+    let (timeout, next) = timeout
+        .select2(dones)
+        .map(|res| match res {
+            future::Either::A(_) => panic!("put/get did not complete"),
+            future::Either::B(((op, next), timeout)) => {
+                info!("{} completes", op);
+                (timeout, next)
+            }
+        })
+        .map_err(|_| panic!("unexpect error"))
+        .wait()
+        .unwrap();
+
+    timeout
+        .select2(next)
+        .map(|res| match res {
+            future::Either::A(_) => panic!("put/get did not complete"),
+            future::Either::B((op, _)) => {
+                info!("{} completes", op);
+            }
+        })
+        .map_err(|_| panic!("unexpect error"))
+        .wait()
+        .unwrap();
+
+    check(&cfg, &ck, "1", "15");
+
+    cfg.end();
 }
 
 #[test]
@@ -395,6 +546,113 @@ fn test_persist_partition_3a() {
 fn test_persist_partition_unreliable_3a() {
     // Test: unreliable net, restarts, partitions, many clients (3A) ...
     generic_test("3A", 5, true, true, true, None)
+}
+
+// if one server falls behind, then rejoins, does it
+// recover by using the InstallSnapshot RPC?
+// also checks that majority discards committed log entries
+// even if minority doesn't respond.
+#[test]
+fn test_snapshot_rpc_3b() {
+    let nservers = 3;
+    let maxraftstate = 1000;
+    let cfg = Config::new(nservers, false, Some(maxraftstate));
+
+    let all = cfg.all();
+    let ck = cfg.make_client(&all);
+
+    cfg.begin("Test: InstallSnapshot RPC (3B)");
+
+    put(&cfg, &ck, "a", "A");
+    check(&cfg, &ck, "a", "A");
+
+    // a bunch of puts into the majority partition.
+    cfg.partition(&[0, 1], &[2]);
+    {
+        let ck1 = cfg.make_client(&[0, 1]);
+        for i in 0..50 {
+            put(&cfg, &ck1, &format!("{}", i), &format!("{}", i));
+        }
+        thread::sleep(RAFT_ELECTION_TIMEOUT);
+        put(&cfg, &ck1, "b", "B");
+    }
+
+    // check that the majority partition has thrown away
+    // most of its log entries.
+    if cfg.log_size() > 2 * maxraftstate {
+        panic!(
+            "logs were not trimmed ({} > 2*{})",
+            cfg.log_size(),
+            maxraftstate
+        );
+    }
+
+    // now make group that requires participation of
+    // lagging server, so that it has to catch up.
+    cfg.partition(&[0, 2], &[1]);
+    {
+        let ck1 = cfg.make_client(&[0, 2]);
+        put(&cfg, &ck1, "c", "C");
+        put(&cfg, &ck1, "d", "D");
+        check(&cfg, &ck1, "a", "A");
+        check(&cfg, &ck1, "b", "B");
+        check(&cfg, &ck1, "1", "1");
+        check(&cfg, &ck1, "49", "49");
+    }
+
+    // now everybody
+    cfg.partition(&[0, 1, 2], &[]);
+
+    put(&cfg, &ck, "e", "E");
+    check(&cfg, &ck, "c", "C");
+    check(&cfg, &ck, "e", "E");
+    check(&cfg, &ck, "1", "1");
+
+    cfg.check_timeout();
+    cfg.end();
+}
+
+// are the snapshots not too huge? 500 bytes is a generous bound for the
+// operations we're doing here.
+#[test]
+fn test_snapshot_size_3b() {
+    let nservers = 3;
+    let maxraftstate = 1000;
+    let maxsnapshotstate = 500;
+    let cfg = Config::new(nservers, false, Some(maxraftstate));
+
+    let all = cfg.all();
+    let ck = cfg.make_client(&all);
+
+    cfg.begin("Test: snapshot size is reasonable (3B)");
+
+    for i in 0..200 {
+        put(&cfg, &ck, "x", "0");
+        check(&cfg, &ck, "x", "0");
+        put(&cfg, &ck, "x", "1");
+        check(&cfg, &ck, "x", "1");
+    }
+
+    // check that servers have thrown away most of their log entries
+    if cfg.log_size() > 2 * maxraftstate {
+        panic!(
+            "logs were not trimmed ({} > 2*{})",
+            cfg.log_size(),
+            maxraftstate,
+        )
+    }
+
+    // check that the snapshots are not unreasonably large
+    if cfg.snapshot_size() > maxsnapshotstate {
+        panic!(
+            "snapshot too large ({} > {})",
+            cfg.snapshot_size(),
+            maxsnapshotstate,
+        )
+    }
+
+    cfg.check_timeout();
+    cfg.end();
 }
 
 #[test]
