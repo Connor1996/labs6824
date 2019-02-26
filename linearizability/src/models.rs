@@ -1,23 +1,22 @@
 use std::collections::HashMap;
 
-use super::model::Model;
-use super::model::Operation;
+use super::model::{Model, Operation, Value, Event, EventKind};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Op {
     GET,
     PUT,
     APPEND,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct KvInput {
     op: Op,
     key: String,
     value: String,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct KvOutput {
     value: String,
 }
@@ -48,6 +47,32 @@ impl Model for KvModel {
         let mut ret = vec![];
         for (_, ops) in map {
             ret.push(ops);
+        }
+        ret
+    }
+
+    fn partition_event(
+        &self,
+        history: Vec<Event<Value<Self::Input, Self::Output>>>,
+    ) -> Vec<Vec<Event<Value<Self::Input, Self::Output>>>> {
+        let mut m = HashMap::new();
+        let mut matched : HashMap<usize, String> = HashMap::new();
+        for event in history {
+            match event.kind {
+                EventKind::CallEvent => {
+                    let key = event.value.input().key.clone();
+                    matched.insert(event.id, key.clone());
+                    m.entry(key).or_insert(vec![]).push(event);
+                },
+                EventKind::ReturnEvent => {
+                    let key = matched[&event.id].clone();
+                    m.entry(key).or_insert(vec![]).push(event);
+                }
+            }
+        }
+        let mut ret = vec![];
+        for (_, v) in m {
+            ret.push(v);
         }
         ret
     }

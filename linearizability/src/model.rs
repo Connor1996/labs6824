@@ -1,13 +1,16 @@
 use std::cmp::PartialEq;
 use std::marker::Send;
+use std::fmt::Debug;
+use std::fmt::Display;
 
-pub enum Value<I, O> {
+#[derive(Debug)]
+pub enum Value<I: Debug, O: Debug> {
     Input(I),
     Output(O),
     None,
 }
 
-impl<I, O> Value<I, O> {
+impl<I: Debug, O:Debug> Value<I, O> {
     pub fn input(&self) -> &I {
         if let Value::Input(i) = self {
             i
@@ -44,9 +47,9 @@ pub struct Event<T> {
 }
 
 pub trait Model: Clone + Send + 'static {
-    type State: Clone + PartialEq;
-    type Input: Send + 'static;
-    type Output: Send + 'static;
+    type State: Clone + Display + PartialEq;
+    type Input: Send + Debug + 'static;
+    type Output: Send + Debug + 'static;
 
     // Partition functions, such that a history is linearizable if an only
     // if each partition is linearizable. If you don't want to implement

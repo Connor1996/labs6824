@@ -10,6 +10,7 @@ mod bitset;
 mod model;
 mod models;
 
+use std::fmt::Debug;
 use std::cell::{Ref, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -34,7 +35,7 @@ struct Entry<T> {
     pub time: i64,
 }
 
-fn make_entries<I, O>(history: Vec<Operation<I, O>>) -> Vec<Entry<Value<I, O>>> {
+fn make_entries<I:Debug, O:Debug>(history: Vec<Operation<I, O>>) -> Vec<Entry<Value<I, O>>> {
     let mut entries = Vec::new();
     for (id, elem) in history.into_iter().enumerate() {
         entries.push(Entry {
@@ -54,11 +55,11 @@ fn make_entries<I, O>(history: Vec<Operation<I, O>>) -> Vec<Entry<Value<I, O>>> 
     entries
 }
 
-struct LinkedNodes<T> {
+struct LinkedNodes<T:Debug> {
     head: Option<LinkNode<T>>,
 }
 
-impl<T> LinkedNodes<T> {
+impl<T:Debug> LinkedNodes<T> {
     pub fn new() -> Self {
         LinkedNodes { head: None }
     }
@@ -123,7 +124,7 @@ impl<T> LinkedNodes<T> {
 
 type LinkNode<T> = Rc<RefCell<Node<T>>>;
 
-struct Node<T> {
+struct Node<T: Debug> {
     pub value: T,
     pub matched: Option<LinkNode<T>>,
     pub id: usize,
@@ -189,12 +190,12 @@ fn cache_contains<M: Model>(
     false
 }
 
-struct CallsEntry<V, T> {
+struct CallsEntry<V:Debug, T> {
     entry: Option<LinkNode<V>>,
     state: T,
 }
 
-fn lift<T>(entry: &LinkNode<T>) {
+fn lift<T:Debug>(entry: &LinkNode<T>) {
     let prev = Ref::map(entry.borrow(), |e| e.prev.as_ref().unwrap());
     prev.borrow_mut().next = entry.borrow().next.clone();
     let next = Ref::map(entry.borrow(), |e| e.next.as_ref().unwrap());
@@ -209,7 +210,7 @@ fn lift<T>(entry: &LinkNode<T>) {
     }
 }
 
-fn unlift<T>(entry: &LinkNode<T>) {
+fn unlift<T:Debug>(entry: &LinkNode<T>) {
     {
         let matched = Ref::map(entry.borrow(), |e| e.matched.as_ref().unwrap());
         let matched_prev = Ref::map(matched.borrow(), |e| e.prev.as_ref().unwrap());
@@ -251,8 +252,7 @@ fn check_single<M: Model>(
             return false;
         }
         let matched = entry.as_ref().unwrap().borrow().matched.clone();
-        entry = if let Some(matching) = matched {
-            // the return entry
+        entry = if let Some(matching) = matched { // the return entry
             let res = model.step(
                 &state,
                 entry.as_ref().unwrap().borrow().value.input(),
