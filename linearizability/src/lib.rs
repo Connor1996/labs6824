@@ -71,7 +71,7 @@ impl<T> LinkedNodes<T> {
         let mut matches: HashMap<usize, LinkNode<T>> = HashMap::new();
         let mut nodes = Self::new();
 
-        for entry in entries {
+        for entry in entries.into_iter().rev() {
             nodes.push_front(match entry.kind {
                 EntryKind::CallEntry => Rc::new(RefCell::new(Node {
                     value: entry.value,
@@ -179,9 +179,11 @@ fn cache_contains<M: Model>(
     cache: &HashMap<u64, Vec<CacheEntry<M::State>>>,
     entry: &CacheEntry<M::State>,
 ) -> bool {
-    for elem in &cache[&entry.linearized.hash()] {
-        if entry.linearized.equals(&elem.linearized) && model.equal(&entry.state, &elem.state) {
-            return true;
+    if cache.contains_key(&entry.linearized.hash()) {
+        for elem in &cache[&entry.linearized.hash()] {
+            if entry.linearized.equals(&elem.linearized) && model.equal(&entry.state, &elem.state) {
+                return true;
+            }
         }
     }
     false
@@ -201,7 +203,6 @@ fn lift<T>(entry: &LinkNode<T>) {
     let matched = Ref::map(entry.borrow(), |e| e.matched.as_ref().unwrap());
     let matched_prev = Ref::map(matched.borrow(), |e| e.prev.as_ref().unwrap());
     matched_prev.borrow_mut().next = matched.borrow().next.clone();
-
     if matched.borrow().next.is_some() {
         let matched_next = Ref::map(matched.borrow(), |e| e.next.as_ref().unwrap());
         matched_next.borrow_mut().prev = matched.borrow().prev.clone();
@@ -209,12 +210,14 @@ fn lift<T>(entry: &LinkNode<T>) {
 }
 
 fn unlift<T>(entry: &LinkNode<T>) {
-    let matched = Ref::map(entry.borrow(), |e| e.matched.as_ref().unwrap());
-    let matched_prev = Ref::map(matched.borrow(), |e| e.prev.as_ref().unwrap());
-    matched_prev.borrow_mut().next = Some(matched.clone());
-    if matched.borrow().next.is_some() {
-        let matched_next = Ref::map(matched.borrow(), |e| e.next.as_ref().unwrap());
-        matched_next.borrow_mut().prev = Some(matched.clone());
+    {
+        let matched = Ref::map(entry.borrow(), |e| e.matched.as_ref().unwrap());
+        let matched_prev = Ref::map(matched.borrow(), |e| e.prev.as_ref().unwrap());
+        matched_prev.borrow_mut().next = Some(matched.clone());
+        if matched.borrow().next.is_some() {
+            let matched_next = Ref::map(matched.borrow(), |e| e.next.as_ref().unwrap());
+            matched_next.borrow_mut().prev = Some(matched.clone());
+        }
     }
 
     let prev = Ref::map(entry.borrow(), |e| e.prev.as_ref().unwrap());
@@ -237,59 +240,61 @@ fn check_single<M: Model>(
     subhistory.push_front(Rc::new(RefCell::new(Node {
         value: Value::None,
         matched: None,
-        id: 0,
+        id: usize::max_value(),
         prev: None,
         next: None,
     })));
     let head_entry = subhistory.head().unwrap();
-    let mut entry = head_entry.borrow().next.clone().unwrap();
+    let mut entry = head_entry.borrow().next.clone();
     while head_entry.borrow().next.is_some() {
         if kill.load(Ordering::SeqCst) {
             return false;
         }
-        let matched = entry.borrow().matched.clone();
-        if let Some(matching) = matched {
+        let matched = entry.as_ref().unwrap().borrow().matched.clone();
+        entry = if let Some(matching) = matched {
             // the return entry
             let res = model.step(
                 &state,
-                entry.borrow().value.input(),
+                entry.as_ref().unwrap().borrow().value.input(),
                 matching.borrow().value.output(),
             );
-            entry = match res {
+            match res {
                 (true, new_state) => {
                     let mut new_linearized = linearized.clone();
-                    new_linearized.set(entry.borrow().id);
+                    new_linearized.set(entry.as_ref().unwrap().borrow().id);
                     let new_cache_entry = CacheEntry {
                         linearized: new_linearized.clone(),
                         state: new_state.clone(),
                     };
                     if !cache_contains(&model, &cache, &new_cache_entry) {
                         let hash = new_linearized.hash();
-                        cache.get_mut(&hash).unwrap().push(new_cache_entry);
+                        cache.entry(hash).or_default().push(new_cache_entry);
                         calls.push(CallsEntry {
-                            entry: Some(entry.clone()),
+                            entry: entry.clone(),
                             state: state,
                         });
                         state = new_state;
-                        linearized = new_linearized;
-                        lift(&entry);
-                        head_entry.borrow().next.clone().unwrap()
+                        linearized.set(entry.as_ref().unwrap().borrow().id);
+                        lift(entry.as_ref().unwrap());
+                        head_entry.borrow().next.clone()
                     } else {
-                        entry.borrow().next.clone().unwrap()
+                        entry.as_ref().unwrap().borrow().next.clone()
                     }
                 }
                 (false, _) => {
-                    if calls.is_empty() {
-                        return false;
-                    }
-                    let calls_top = calls.pop().unwrap();
-                    entry = calls_top.entry.unwrap();
-                    state = calls_top.state;
-                    linearized.clear(entry.borrow().id);
-                    unlift(&entry);
-                    entry.borrow().next.clone().unwrap()
+                    entry.as_ref().unwrap().borrow().next.clone()
                 }
             }
+        } else {
+            if calls.is_empty() {
+                return false;
+            }
+            let calls_top = calls.pop().unwrap();
+            entry = calls_top.entry;
+            state = calls_top.state;
+            linearized.clear(entry.as_ref().unwrap().borrow().id);
+            unlift(entry.as_ref().unwrap());
+            entry.as_ref().unwrap().borrow().next.clone()
         }
     }
     true

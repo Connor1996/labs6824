@@ -55,7 +55,7 @@ impl Model for KvModel {
     fn init(&self) -> Self::State {
         // note: we are modeling a single key's value here;
         // we're partitioning by key, so this is okay
-        "".to_string().to_string()
+        "".to_string()
     }
 
     fn step(
@@ -105,19 +105,19 @@ mod tests {
         }
 
         let f = File::open(file_name)?;
-        let mut buf_reader = BufReader::new(f);
+        let buf_reader = BufReader::new(f);
         let mut events = vec![];
         let mut id = 0;
         let mut procid_map : HashMap<isize, usize> = HashMap::new();
 
-        let mut contents = String::new();
-        while buf_reader.read_line(&mut contents)? != 0 {
+        for line in buf_reader.lines() {
+            let contents = line.unwrap();
             if let Some(args) = invoke_get.captures(&contents) {
                 events.push(Event{
                     kind: EventKind::CallEvent,
                     value: Value::Input(KvInput{
                         op: Op::GET,
-                        key: args[2x].to_string(),
+                        key: args[2].to_string(),
                         value: "".to_string(),
                     }),
                     id,

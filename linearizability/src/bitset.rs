@@ -1,13 +1,15 @@
+use std::num::Wrapping;
+
 #[derive(Clone)]
 pub struct Bitset(Vec<u64>);
 
 impl Bitset {
     pub fn new(bits: usize) -> Self {
         let mut extra = 0;
-        if extra % 64 != 0 {
+        if bits % 64 != 0 {
             extra = 1;
         }
-        Bitset(vec![(bits / 64 + extra) as u64])
+        Bitset(vec![0; bits / 64 + extra])
     }
 
     pub fn set(&mut self, pos: usize) {
@@ -32,7 +34,7 @@ impl Bitset {
             v = (v & 0x5555555555555555) + ((v & 0xAAAAAAAAAAAAAAAA) >> 1);
             v = (v & 0x3333333333333333) + ((v & 0xCCCCCCCCCCCCCCCC) >> 2);
             v = (v & 0x0F0F0F0F0F0F0F0F) + ((v & 0xF0F0F0F0F0F0F0F0) >> 4);
-            v *= 0x0101010101010101;
+            v = (Wrapping(v) * Wrapping(0x0101010101010101)).0;
             total += ((v >> 56) & 0xFF) as usize;
         }
         total
@@ -52,8 +54,8 @@ impl Bitset {
         if b.len() != b2.len() {
             return false;
         }
-        for i in b {
-            if b[*i as usize] != b2[*i as usize] {
+        for i in 0..b.len() {
+            if b[i] != b2[i] {
                 return false;
             }
         }
