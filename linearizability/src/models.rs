@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use super::model::{Model, Operation, Value, Event, EventKind};
+use super::model::{Event, EventKind, Model, Operation, Value};
 
 #[derive(Clone, Debug)]
 pub enum Op {
@@ -26,7 +26,7 @@ pub struct KvModel {}
 
 impl KvModel {
     pub fn new() -> Self {
-        KvModel{}
+        KvModel {}
     }
 }
 
@@ -56,14 +56,14 @@ impl Model for KvModel {
         history: Vec<Event<Value<Self::Input, Self::Output>>>,
     ) -> Vec<Vec<Event<Value<Self::Input, Self::Output>>>> {
         let mut m = HashMap::new();
-        let mut matched : HashMap<usize, String> = HashMap::new();
+        let mut matched: HashMap<usize, String> = HashMap::new();
         for event in history {
             match event.kind {
                 EventKind::CallEvent => {
                     let key = event.value.input().key.clone();
                     matched.insert(event.id, key.clone());
                     m.entry(key).or_insert(vec![]).push(event);
-                },
+                }
                 EventKind::ReturnEvent => {
                     let key = matched[&event.id].clone();
                     m.entry(key).or_insert(vec![]).push(event);
@@ -99,14 +99,14 @@ impl Model for KvModel {
 
 #[cfg(test)]
 mod tests {
-    use std::fs::File;
-    use std::io::{Result, BufReader, BufRead};
     use std::collections::HashMap;
+    use std::fs::File;
+    use std::io::{BufRead, BufReader, Result};
 
-    use regex::Regex;
-    use model::{Value, Event, Model, EventKind};
-    use super::{KvInput, KvModel, KvOutput, Op};
     use super::super::check_events;
+    use super::{KvInput, KvModel, KvOutput, Op};
+    use model::{Event, EventKind, Model, Value};
+    use regex::Regex;
 
     fn check_kv(log_name: String, correct: bool) {
         let model = KvModel::new();
@@ -119,28 +119,45 @@ mod tests {
         assert_eq!(check_events(model, events), correct);
     }
 
-    fn parse_kv_log(file_name: &String) -> Result<Vec<Event<Value<<KvModel as Model>::Input, <KvModel as Model>::Output>>>> {
+    fn parse_kv_log(
+        file_name: &String,
+    ) -> Result<Vec<Event<Value<<KvModel as Model>::Input, <KvModel as Model>::Output>>>> {
         lazy_static! {
-            static ref invoke_get : Regex = Regex::new(r#"\{:process (\d+), :type :invoke, :f :get, :key "(.*)", :value nil\}"#).unwrap();
-            static ref invoke_put : Regex = Regex::new(r#"\{:process (\d+), :type :invoke, :f :put, :key "(.*)", :value "(.*)"\}"#).unwrap();
-            static ref invoke_append : Regex = Regex::new(r#"\{:process (\d+), :type :invoke, :f :append, :key "(.*)", :value "(.*)"\}"#).unwrap();
-            static ref return_get : Regex = Regex::new(r#"\{:process (\d+), :type :ok, :f :get, :key ".*", :value "(.*)"\}"#).unwrap();
-            static ref return_put : Regex = Regex::new(r#"\{:process (\d+), :type :ok, :f :put, :key ".*", :value ".*"\}"#).unwrap();
-            static ref return_append : Regex = Regex::new(r#"\{:process (\d+), :type :ok, :f :append, :key ".*", :value ".*"\}"#).unwrap();
+            static ref invoke_get: Regex = Regex::new(
+                r#"\{:process (\d+), :type :invoke, :f :get, :key "(.*)", :value nil\}"#
+            )
+            .unwrap();
+            static ref invoke_put: Regex = Regex::new(
+                r#"\{:process (\d+), :type :invoke, :f :put, :key "(.*)", :value "(.*)"\}"#
+            )
+            .unwrap();
+            static ref invoke_append: Regex = Regex::new(
+                r#"\{:process (\d+), :type :invoke, :f :append, :key "(.*)", :value "(.*)"\}"#
+            )
+            .unwrap();
+            static ref return_get: Regex =
+                Regex::new(r#"\{:process (\d+), :type :ok, :f :get, :key ".*", :value "(.*)"\}"#)
+                    .unwrap();
+            static ref return_put: Regex =
+                Regex::new(r#"\{:process (\d+), :type :ok, :f :put, :key ".*", :value ".*"\}"#)
+                    .unwrap();
+            static ref return_append: Regex =
+                Regex::new(r#"\{:process (\d+), :type :ok, :f :append, :key ".*", :value ".*"\}"#)
+                    .unwrap();
         }
 
         let f = File::open(file_name)?;
         let buf_reader = BufReader::new(f);
         let mut events = vec![];
         let mut id = 0;
-        let mut procid_map : HashMap<isize, usize> = HashMap::new();
+        let mut procid_map: HashMap<isize, usize> = HashMap::new();
 
         for line in buf_reader.lines() {
             let contents = line.unwrap();
             if let Some(args) = invoke_get.captures(&contents) {
-                events.push(Event{
+                events.push(Event {
                     kind: EventKind::CallEvent,
-                    value: Value::Input(KvInput{
+                    value: Value::Input(KvInput {
                         op: Op::GET,
                         key: args[2].to_string(),
                         value: "".to_string(),
@@ -150,52 +167,58 @@ mod tests {
                 procid_map.insert(args[1].to_string().parse().unwrap(), id);
                 id += 1;
             } else if let Some(args) = invoke_put.captures(&contents) {
-                events.push(Event{
+                events.push(Event {
                     kind: EventKind::CallEvent,
-                    value: Value::Input(KvInput{
+                    value: Value::Input(KvInput {
                         op: Op::PUT,
                         key: args[2].to_string(),
                         value: args[3].to_string(),
                     }),
                     id,
                 });
-                procid_map.insert(args[1].to_string().parse().unwrap(),id);
+                procid_map.insert(args[1].to_string().parse().unwrap(), id);
                 id += 1;
             } else if let Some(args) = invoke_append.captures(&contents) {
-                events.push(Event{
+                events.push(Event {
                     kind: EventKind::CallEvent,
-                    value: Value::Input(KvInput{
+                    value: Value::Input(KvInput {
                         op: Op::APPEND,
                         key: args[2].to_string(),
                         value: args[3].to_string(),
                     }),
                     id,
                 });
-                procid_map.insert(args[1].to_string().parse().unwrap(),id);
+                procid_map.insert(args[1].to_string().parse().unwrap(), id);
                 id += 1;
             } else if let Some(args) = return_get.captures(&contents) {
-                let match_id = procid_map.remove(&args[1].to_string().parse().unwrap()).unwrap();
-                events.push(Event{
+                let match_id = procid_map
+                    .remove(&args[1].to_string().parse().unwrap())
+                    .unwrap();
+                events.push(Event {
                     kind: EventKind::ReturnEvent,
-                    value: Value::Output(KvOutput{
+                    value: Value::Output(KvOutput {
                         value: args[2].to_string(),
                     }),
                     id: match_id,
                 });
             } else if let Some(args) = return_put.captures(&contents) {
-                let match_id = procid_map.remove(&args[1].to_string().parse().unwrap()).unwrap();
-                events.push(Event{
+                let match_id = procid_map
+                    .remove(&args[1].to_string().parse().unwrap())
+                    .unwrap();
+                events.push(Event {
                     kind: EventKind::ReturnEvent,
-                    value: Value::Output(KvOutput{
+                    value: Value::Output(KvOutput {
                         value: "".to_string(),
                     }),
                     id: match_id,
                 });
             } else if let Some(args) = return_append.captures(&contents) {
-                let match_id = procid_map.remove(&args[1].to_string().parse().unwrap()).unwrap();
-                events.push(Event{
+                let match_id = procid_map
+                    .remove(&args[1].to_string().parse().unwrap())
+                    .unwrap();
+                events.push(Event {
                     kind: EventKind::ReturnEvent,
-                    value: Value::Output(KvOutput{
+                    value: Value::Output(KvOutput {
                         value: "".to_string(),
                     }),
                     id: match_id,
@@ -206,9 +229,9 @@ mod tests {
         }
 
         for (_, match_id) in procid_map {
-            events.push(Event{
+            events.push(Event {
                 kind: EventKind::ReturnEvent,
-                value: Value::Output(KvOutput{
+                value: Value::Output(KvOutput {
                     value: "".to_string(),
                 }),
                 id: match_id,

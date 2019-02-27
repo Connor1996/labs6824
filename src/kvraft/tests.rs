@@ -1,9 +1,9 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
-use std::thread;
-use std::time::{Instant, Duration};
 use std::sync::Mutex;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use futures::sync::oneshot;
 use futures::{future, Future};
@@ -12,9 +12,9 @@ use rand::Rng;
 
 use kvraft::client::Clerk;
 use kvraft::config::Config;
-use linearizability::{check_operations_timeout};
+use linearizability::check_operations_timeout;
+use linearizability::model::Operation;
 use linearizability::models::{KvInput, KvModel, KvOutput, Op};
-use linearizability::model::{Operation};
 
 /// The tester generously allows solutions to complete elections in one second
 /// (much more than the paper's range of timeouts).
@@ -416,36 +416,43 @@ fn generic_test_linearizability(
                         let (inp, out) = if rng.gen::<usize>() % 1000 < 500 {
                             append(&cfg1, myck, &key, &nv);
                             j += 1;
-                            (KvInput{
-                                op: Op::APPEND,
-                                key: key,
-                                value: nv,
-                            }, KvOutput {
-                                value: "".to_string(),
-                            })
+                            (
+                                KvInput {
+                                    op: Op::APPEND,
+                                    key: key,
+                                    value: nv,
+                                },
+                                KvOutput {
+                                    value: "".to_string(),
+                                },
+                            )
                         } else if rng.gen::<usize>() % 1000 < 100 {
                             put(&cfg1, myck, &key, &nv);
                             j += 1;
-                            (KvInput{
-                                op: Op::PUT,
-                                key: key,
-                                value: nv,
-                            }, KvOutput {
-                                value: "".to_string(),
-                            })
+                            (
+                                KvInput {
+                                    op: Op::PUT,
+                                    key: key,
+                                    value: nv,
+                                },
+                                KvOutput {
+                                    value: "".to_string(),
+                                },
+                            )
                         } else {
                             let v = get(&cfg1, myck, &key);
-                            (KvInput{
-                                op: Op::GET,
-                                key: key,
-                                value: "".to_string(),
-                            }, KvOutput {
-                                value: v,
-                            })
+                            (
+                                KvInput {
+                                    op: Op::GET,
+                                    key: key,
+                                    value: "".to_string(),
+                                },
+                                KvOutput { value: v },
+                            )
                         };
 
                         let end = begin.elapsed().as_nanos() as i64;
-                        let op = Operation{
+                        let op = Operation {
                             input: inp,
                             call: start,
                             output: out,
@@ -523,7 +530,11 @@ fn generic_test_linearizability(
     cfg.check_timeout();
     cfg.end();
 
-    if !check_operations_timeout(KvModel::new(), Arc::try_unwrap(operations).unwrap().into_inner().unwrap(), LINEARIZABILITY_CHECK_TIMEOUT) {
+    if !check_operations_timeout(
+        KvModel::new(),
+        Arc::try_unwrap(operations).unwrap().into_inner().unwrap(),
+        LINEARIZABILITY_CHECK_TIMEOUT,
+    ) {
         panic!("history is not linearizable");
     }
 }
@@ -743,7 +754,7 @@ fn test_persist_partition_unreliable_3a() {
 
 #[test]
 fn test_persist_partition_unreliable_linearizable_3a() {
-	// Test: unreliable net, restarts, partitions, linearizability checks (3A) ...
+    // Test: unreliable net, restarts, partitions, linearizability checks (3A) ...
     generic_test_linearizability("3A", 15, 7, true, true, true, None)
 }
 

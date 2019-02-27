@@ -10,12 +10,12 @@ mod bitset;
 pub mod model;
 pub mod models;
 
-use std::fmt::Debug;
 use std::cell::{Ref, RefCell};
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{channel,Receiver, RecvTimeoutError};
+use std::sync::mpsc::{channel, Receiver, RecvTimeoutError};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -35,7 +35,7 @@ struct Entry<T> {
     pub time: i64,
 }
 
-fn make_entries<I:Debug, O:Debug>(history: Vec<Operation<I, O>>) -> Vec<Entry<Value<I, O>>> {
+fn make_entries<I: Debug, O: Debug>(history: Vec<Operation<I, O>>) -> Vec<Entry<Value<I, O>>> {
     let mut entries = Vec::new();
     for (id, elem) in history.into_iter().enumerate() {
         entries.push(Entry {
@@ -55,11 +55,11 @@ fn make_entries<I:Debug, O:Debug>(history: Vec<Operation<I, O>>) -> Vec<Entry<Va
     entries
 }
 
-struct LinkedNodes<T:Debug> {
+struct LinkedNodes<T: Debug> {
     head: Option<LinkNode<T>>,
 }
 
-impl<T:Debug> LinkedNodes<T> {
+impl<T: Debug> LinkedNodes<T> {
     pub fn new() -> Self {
         LinkedNodes { head: None }
     }
@@ -190,12 +190,12 @@ fn cache_contains<M: Model>(
     false
 }
 
-struct CallsEntry<V:Debug, T> {
+struct CallsEntry<V: Debug, T> {
     entry: Option<LinkNode<V>>,
     state: T,
 }
 
-fn lift<T:Debug>(entry: &LinkNode<T>) {
+fn lift<T: Debug>(entry: &LinkNode<T>) {
     let prev = Ref::map(entry.borrow(), |e| e.prev.as_ref().unwrap());
     prev.borrow_mut().next = entry.borrow().next.clone();
     let next = Ref::map(entry.borrow(), |e| e.next.as_ref().unwrap());
@@ -210,7 +210,7 @@ fn lift<T:Debug>(entry: &LinkNode<T>) {
     }
 }
 
-fn unlift<T:Debug>(entry: &LinkNode<T>) {
+fn unlift<T: Debug>(entry: &LinkNode<T>) {
     {
         let matched = Ref::map(entry.borrow(), |e| e.matched.as_ref().unwrap());
         let matched_prev = Ref::map(matched.borrow(), |e| e.prev.as_ref().unwrap());
@@ -252,7 +252,8 @@ fn check_single<M: Model>(
             return false;
         }
         let matched = entry.as_ref().unwrap().borrow().matched.clone();
-        entry = if let Some(matching) = matched { // the return entry
+        entry = if let Some(matching) = matched {
+            // the return entry
             let res = model.step(
                 &state,
                 entry.as_ref().unwrap().borrow().value.input(),
@@ -281,9 +282,7 @@ fn check_single<M: Model>(
                         entry.as_ref().unwrap().borrow().next.clone()
                     }
                 }
-                (false, _) => {
-                    entry.as_ref().unwrap().borrow().next.clone()
-                }
+                (false, _) => entry.as_ref().unwrap().borrow().next.clone(),
             }
         } else {
             if calls.is_empty() {
@@ -372,7 +371,12 @@ pub fn check_events_timeout<M: Model>(
     wait_res(rx, kill, count, timeout)
 }
 
-fn wait_res(rx: Receiver<bool>, kill: Arc<AtomicBool>, mut count: usize, timeout: Duration) -> bool {
+fn wait_res(
+    rx: Receiver<bool>,
+    kill: Arc<AtomicBool>,
+    mut count: usize,
+    timeout: Duration,
+) -> bool {
     let mut ok = true;
     loop {
         match if timeout.as_secs() == 0 && timeout.subsec_nanos() == 0 {

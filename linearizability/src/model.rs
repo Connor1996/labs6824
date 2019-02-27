@@ -1,7 +1,7 @@
 use std::cmp::PartialEq;
-use std::marker::Send;
 use std::fmt::Debug;
 use std::fmt::Display;
+use std::marker::Send;
 
 #[derive(Debug)]
 pub enum Value<I: Debug, O: Debug> {
@@ -10,7 +10,7 @@ pub enum Value<I: Debug, O: Debug> {
     None,
 }
 
-impl<I: Debug, O:Debug> Value<I, O> {
+impl<I: Debug, O: Debug> Value<I, O> {
     pub fn input(&self) -> &I {
         if let Value::Input(i) = self {
             i
