@@ -419,7 +419,7 @@ fn generic_test_linearizability(
                             (
                                 KvInput {
                                     op: Op::APPEND,
-                                    key: key,
+                                    key,
                                     value: nv,
                                 },
                                 KvOutput {
@@ -432,7 +432,7 @@ fn generic_test_linearizability(
                             (
                                 KvInput {
                                     op: Op::PUT,
-                                    key: key,
+                                    key,
                                     value: nv,
                                 },
                                 KvOutput {
@@ -444,7 +444,7 @@ fn generic_test_linearizability(
                             (
                                 KvInput {
                                     op: Op::GET,
-                                    key: key,
+                                    key,
                                     value: "".to_string(),
                                 },
                                 KvOutput { value: v },
@@ -531,7 +531,7 @@ fn generic_test_linearizability(
     cfg.end();
 
     if !check_operations_timeout(
-        KvModel::new(),
+        KvModel {},
         Arc::try_unwrap(operations).unwrap().into_inner().unwrap(),
         LINEARIZABILITY_CHECK_TIMEOUT,
     ) {

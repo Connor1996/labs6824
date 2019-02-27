@@ -47,6 +47,9 @@ pub struct Event<T> {
     pub id: usize,
 }
 
+pub type Operations<I, O> = Vec<Operation<I, O>>;
+pub type Events<I, O> = Vec<Event<Value<I, O>>>;
+
 pub trait Model: Clone + Send + 'static {
     type State: Clone + Display + PartialEq;
     type Input: Send + Debug + 'static;
@@ -58,15 +61,15 @@ pub trait Model: Clone + Send + 'static {
     // below.
     fn partition(
         &self,
-        history: Vec<Operation<Self::Input, Self::Output>>,
-    ) -> Vec<Vec<Operation<Self::Input, Self::Output>>> {
+        history: Operations<Self::Input, Self::Output>,
+    ) -> Vec<Operations<Self::Input, Self::Output>> {
         vec![history]
     }
 
     fn partition_event(
         &self,
-        history: Vec<Event<Value<Self::Input, Self::Output>>>,
-    ) -> Vec<Vec<Event<Value<Self::Input, Self::Output>>>> {
+        history: Events<Self::Input, Self::Output>,
+    ) -> Vec<Events<Self::Input, Self::Output>> {
         vec![history]
     }
 

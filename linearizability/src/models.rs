@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use super::model::{Event, EventKind, Model, Operation, Value};
+use super::model::{EventKind, Events, Model, Operations};
 
 #[derive(Clone, Debug)]
 pub enum Op {
@@ -21,14 +21,8 @@ pub struct KvOutput {
     pub value: String,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct KvModel {}
-
-impl KvModel {
-    pub fn new() -> Self {
-        KvModel {}
-    }
-}
 
 impl Model for KvModel {
     type State = String;
@@ -37,11 +31,11 @@ impl Model for KvModel {
 
     fn partition(
         &self,
-        history: Vec<Operation<Self::Input, Self::Output>>,
-    ) -> Vec<Vec<Operation<Self::Input, Self::Output>>> {
+        history: Operations<Self::Input, Self::Output>,
+    ) -> Vec<Operations<Self::Input, Self::Output>> {
         let mut map = HashMap::new();
         for op in history {
-            let v = map.entry(op.input.key.clone()).or_insert(vec![]);
+            let v = map.entry(op.input.key.clone()).or_insert_with(|| vec![]);
             (*v).push(op);
         }
         let mut ret = vec![];
@@ -53,8 +47,8 @@ impl Model for KvModel {
 
     fn partition_event(
         &self,
-        history: Vec<Event<Value<Self::Input, Self::Output>>>,
-    ) -> Vec<Vec<Event<Value<Self::Input, Self::Output>>>> {
+        history: Events<Self::Input, Self::Output>,
+    ) -> Vec<Events<Self::Input, Self::Output>> {
         let mut m = HashMap::new();
         let mut matched: HashMap<usize, String> = HashMap::new();
         for event in history {
@@ -62,11 +56,11 @@ impl Model for KvModel {
                 EventKind::CallEvent => {
                     let key = event.value.input().key.clone();
                     matched.insert(event.id, key.clone());
-                    m.entry(key).or_insert(vec![]).push(event);
+                    m.entry(key).or_insert_with(|| vec![]).push(event);
                 }
                 EventKind::ReturnEvent => {
                     let key = matched[&event.id].clone();
-                    m.entry(key).or_insert(vec![]).push(event);
+                    m.entry(key).or_insert_with(|| vec![]).push(event);
                 }
             }
         }
@@ -105,11 +99,11 @@ mod tests {
 
     use super::super::check_events;
     use super::{KvInput, KvModel, KvOutput, Op};
-    use model::{Event, EventKind, Model, Value};
+    use model::{Event, EventKind, Events, Model, Value};
     use regex::Regex;
 
     fn check_kv(log_name: String, correct: bool) {
-        let model = KvModel::new();
+        let model = KvModel {};
 
         let file_name = format!("../linearizability/test_data/{}.txt", &log_name);
         let events = match parse_kv_log(&file_name) {
@@ -120,8 +114,8 @@ mod tests {
     }
 
     fn parse_kv_log(
-        file_name: &String,
-    ) -> Result<Vec<Event<Value<<KvModel as Model>::Input, <KvModel as Model>::Output>>>> {
+        file_name: &str,
+    ) -> Result<Events<<KvModel as Model>::Input, <KvModel as Model>::Output>> {
         lazy_static! {
             static ref invoke_get: Regex = Regex::new(
                 r#"\{:process (\d+), :type :invoke, :f :get, :key "(.*)", :value nil\}"#

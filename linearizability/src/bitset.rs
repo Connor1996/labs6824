@@ -5,10 +5,7 @@ pub struct Bitset(Vec<u64>);
 
 impl Bitset {
     pub fn new(bits: usize) -> Self {
-        let mut extra = 0;
-        if bits % 64 != 0 {
-            extra = 1;
-        }
+        let extra = if bits % 64 != 0 { 1 } else { 0 };
         Bitset(vec![0; bits / 64 + extra])
     }
 
@@ -25,11 +22,11 @@ impl Bitset {
     fn popcnt(&self) -> usize {
         let mut total = 0;
         for b in &self.0 {
-            let mut v = b.clone();
-            v = (v & 0x5555555555555555) + ((v & 0xAAAAAAAAAAAAAAAA) >> 1);
-            v = (v & 0x3333333333333333) + ((v & 0xCCCCCCCCCCCCCCCC) >> 2);
-            v = (v & 0x0F0F0F0F0F0F0F0F) + ((v & 0xF0F0F0F0F0F0F0F0) >> 4);
-            v = (Wrapping(v) * Wrapping(0x0101010101010101)).0;
+            let mut v = *b;
+            v = (v & 0x5555_5555_5555_5555) + ((v & 0xAAAA_AAAA_AAAA_AAAA) >> 1);
+            v = (v & 0x3333_3333_3333_3333) + ((v & 0xCCCC_CCCC_CCCC_CCCC) >> 2);
+            v = (v & 0x0F0F_0F0F_0F0F_0F0F) + ((v & 0xF0F0_F0F0_F0F0_F0F0) >> 4);
+            v = (Wrapping(v) * Wrapping(0x0101_0101_0101_0101)).0;
             total += ((v >> 56) & 0xFF) as usize;
         }
         total

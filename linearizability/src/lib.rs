@@ -21,7 +21,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use bitset::Bitset;
-use model::{Event, EventKind, Model, Operation, Value};
+use model::{Event, EventKind, Events, Model, Operations, Value};
 
 enum EntryKind {
     CallEntry,
@@ -35,7 +35,7 @@ struct Entry<T> {
     pub time: i64,
 }
 
-fn make_entries<I: Debug, O: Debug>(history: Vec<Operation<I, O>>) -> Vec<Entry<Value<I, O>>> {
+fn make_entries<I: Debug, O: Debug>(history: Operations<I, O>) -> Vec<Entry<Value<I, O>>> {
     let mut entries = Vec::new();
     for (id, elem) in history.into_iter().enumerate() {
         entries.push(Entry {
@@ -76,7 +76,7 @@ impl<T: Debug> LinkedNodes<T> {
             nodes.push_front(match entry.kind {
                 EntryKind::CallEntry => Rc::new(RefCell::new(Node {
                     value: entry.value,
-                    matched: matches.get(&entry.id).map(|v| v.clone()),
+                    matched: matches.get(&entry.id).cloned(),
                     id: entry.id,
                     next: None,
                     prev: None,
@@ -272,7 +272,7 @@ fn check_single<M: Model>(
                         cache.entry(hash).or_default().push(new_cache_entry);
                         calls.push(CallsEntry {
                             entry: entry.clone(),
-                            state: state,
+                            state,
                         });
                         state = new_state;
                         linearized.set(entry.as_ref().unwrap().borrow().id);
@@ -299,7 +299,7 @@ fn check_single<M: Model>(
     true
 }
 
-pub fn check_operations<M: Model>(model: M, history: Vec<Operation<M::Input, M::Output>>) -> bool {
+pub fn check_operations<M: Model>(model: M, history: Operations<M::Input, M::Output>) -> bool {
     check_operations_timeout(model, history, Duration::new(0, 0))
 }
 
@@ -307,7 +307,7 @@ pub fn check_operations<M: Model>(model: M, history: Vec<Operation<M::Input, M::
 // if this operation times out, then a false positive is possible
 pub fn check_operations_timeout<M: Model>(
     model: M,
-    history: Vec<Operation<M::Input, M::Output>>,
+    history: Operations<M::Input, M::Output>,
     timeout: Duration,
 ) -> bool {
     let partitions = model.partition(history);
@@ -335,7 +335,7 @@ pub fn check_operations_timeout<M: Model>(
     wait_res(rx, kill, count, timeout)
 }
 
-pub fn check_events<M: Model>(model: M, history: Vec<Event<Value<M::Input, M::Output>>>) -> bool {
+pub fn check_events<M: Model>(model: M, history: Events<M::Input, M::Output>) -> bool {
     check_events_timeout(model, history, Duration::new(0, 0))
 }
 
@@ -343,7 +343,7 @@ pub fn check_events<M: Model>(model: M, history: Vec<Event<Value<M::Input, M::Ou
 // if this operation times out, then a false positive is possible
 pub fn check_events_timeout<M: Model>(
     model: M,
-    history: Vec<Event<Value<M::Input, M::Output>>>,
+    history: Events<M::Input, M::Output>,
     timeout: Duration,
 ) -> bool {
     let partitions = model.partition_event(history);
