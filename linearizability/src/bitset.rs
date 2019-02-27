@@ -22,11 +22,6 @@ impl Bitset {
         self.0[major] &= !(1 << minor);
     }
 
-    pub fn get(&self, pos: usize) -> bool {
-        let (major, minor) = bitset_index(pos);
-        self.0[major] & (1 << minor) != 0
-    }
-
     fn popcnt(&self) -> usize {
         let mut total = 0;
         for b in &self.0 {
