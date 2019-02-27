@@ -7,15 +7,15 @@ extern crate regex;
 extern crate lazy_static;
 
 mod bitset;
-mod model;
-mod models;
+pub mod model;
+pub mod models;
 
 use std::fmt::Debug;
 use std::cell::{Ref, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{channel, RecvTimeoutError};
+use std::sync::mpsc::{channel,Receiver, RecvTimeoutError};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -301,7 +301,7 @@ fn check_single<M: Model>(
 }
 
 pub fn check_operations<M: Model>(model: M, history: Vec<Operation<M::Input, M::Output>>) -> bool {
-    check_operations_timeout(model, history, 0)
+    check_operations_timeout(model, history, Duration::new(0, 0))
 }
 
 // timeout = 0 means no timeout
@@ -309,14 +309,14 @@ pub fn check_operations<M: Model>(model: M, history: Vec<Operation<M::Input, M::
 pub fn check_operations_timeout<M: Model>(
     model: M,
     history: Vec<Operation<M::Input, M::Output>>,
-    timeout: u64,
+    timeout: Duration,
 ) -> bool {
     let partitions = model.partition(history);
 
     let (tx, rx) = channel();
     let mut handles = vec![];
     let kill = Arc::new(AtomicBool::new(false));
-    let mut count = partitions.len();
+    let count = partitions.len();
     for subhistory in partitions {
         let tx = tx.clone();
         let kill = Arc::clone(&kill);
@@ -333,33 +333,11 @@ pub fn check_operations_timeout<M: Model>(
     }
     drop(tx);
 
-    let mut ok = true;
-    loop {
-        match if timeout == 0 {
-            rx.recv().map_err(From::from)
-        } else {
-            rx.recv_deadline(Instant::now() + Duration::from_secs(timeout))
-        } {
-            Ok(res) => {
-                ok = ok && res;
-                if !ok {
-                    kill.store(true, Ordering::SeqCst);
-                    break;
-                }
-                count -= 1;
-                if count == 0 {
-                    break;
-                }
-            }
-            Err(RecvTimeoutError::Timeout) => break,
-            Err(e) => panic!("recv err: {}", e),
-        }
-    }
-    ok
+    wait_res(rx, kill, count, timeout)
 }
 
 pub fn check_events<M: Model>(model: M, history: Vec<Event<Value<M::Input, M::Output>>>) -> bool {
-    check_events_timeout(model, history, 0)
+    check_events_timeout(model, history, Duration::new(0, 0))
 }
 
 // timeout = 0 means no timeout
@@ -367,14 +345,14 @@ pub fn check_events<M: Model>(model: M, history: Vec<Event<Value<M::Input, M::Ou
 pub fn check_events_timeout<M: Model>(
     model: M,
     history: Vec<Event<Value<M::Input, M::Output>>>,
-    timeout: u64,
+    timeout: Duration,
 ) -> bool {
     let partitions = model.partition_event(history);
 
     let (tx, rx) = channel();
     let mut handles = vec![];
     let kill = Arc::new(AtomicBool::new(false));
-    let mut count = partitions.len();
+    let count = partitions.len();
     for subhistory in partitions {
         let tx = tx.clone();
         let kill = Arc::clone(&kill);
@@ -391,12 +369,16 @@ pub fn check_events_timeout<M: Model>(
     }
     drop(tx);
 
+    wait_res(rx, kill, count, timeout)
+}
+
+fn wait_res(rx: Receiver<bool>, kill: Arc<AtomicBool>, mut count: usize, timeout: Duration) -> bool {
     let mut ok = true;
     loop {
-        match if timeout == 0 {
+        match if timeout.as_secs() == 0 && timeout.subsec_nanos() == 0 {
             rx.recv().map_err(From::from)
         } else {
-            rx.recv_deadline(Instant::now() + Duration::from_secs(timeout))
+            rx.recv_deadline(Instant::now() + timeout)
         } {
             Ok(res) => {
                 ok = ok && res;

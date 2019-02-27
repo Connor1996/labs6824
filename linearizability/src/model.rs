@@ -28,7 +28,8 @@ impl<I: Debug, O:Debug> Value<I, O> {
     }
 }
 
-pub struct Operation<I, O> {
+#[derive(Debug)]
+pub struct Operation<I: Debug, O: Debug> {
     pub input: I,
     pub call: i64, // invocation time
     pub output: O,

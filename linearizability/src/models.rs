@@ -11,14 +11,14 @@ pub enum Op {
 
 #[derive(Clone, Debug)]
 pub struct KvInput {
-    op: Op,
-    key: String,
-    value: String,
+    pub op: Op,
+    pub key: String,
+    pub value: String,
 }
 
 #[derive(Clone, Debug)]
 pub struct KvOutput {
-    value: String,
+    pub value: String,
 }
 
 #[derive(Clone)]
